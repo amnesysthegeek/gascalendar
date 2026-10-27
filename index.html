@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>GasCalendar - Appuntamenti & Scadenze</title>
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- Google API Client Libraries for OAuth & Calendar -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <script src="https://apis.google.com/js/api.js" async defer></script>
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Plus Jakarta Sans', 'sans-serif'],
+                    },
+                    colors: {
+                        brand: {
+                            50: '#fff1f2',
+                            100: '#ffe4e6',
+                            400: '#fb7185',
+                            500: '#f43f5e',
+                            600: '#e11d48',
+                        },
+                        pop: {
+                            yellow: '#FEF08A',
+                            green: '#BBF7D0',
+                            purple: '#E9D5FF',
+                            blue: '#BFDBFE',
+                            orange: '#FED7AA',
+                            pink: '#FBCFE8'
+                        }
+                    },
+                    boxShadow: {
+                        'pop': '4px 4px 0px 0px rgba(15, 23, 42, 0.9)',
+                        'pop-sm': '2px 2px 0px 0px rgba(15, 23, 42, 0.9)',
+                        'pop-lg': '6px 6px 0px 0px rgba(15, 23, 42, 0.9)',
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        body {
+            font-family: 'Plus Jakarta Sans', sans-serif;
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+        }
+        /* Hide scrollbars for crisp UI */
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+        /* Custom smooth transition for bottom sheet */
+        .modal-bottom-sheet {
+            transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+    </style>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen pb-24 md:pb-10">
+
+    <!-- Sticky Mobile Top Bar -->
+    <header class="sticky top-0 z-30 bg-white/90 backdrop-blur-md border-b-2 border-slate-900 px-4 py-3 shadow-sm">
+        <div class="max-w-md mx-auto flex items-center justify-between">
+            <div class="flex items-center space-x-2">
+                <div class="w-10 h-10 bg-rose-500 rounded-xl border-2 border-slate-900 flex items-center justify-center text-white font-extrabold text-xl shadow-pop-sm">
+                    G
+                </div>
+                <div>
+                    <h1 class="text-xl font-black tracking-tight leading-none text-slate-900">GasCalendar</h1>
+                    <p class="text-xs font-semibold text-rose-500 flex items-center gap-1 mt-0.5">
+                        <span class="inline-block w-2 h-2 rounded-full bg-emerald-400 border border-slate-900 animate-pulse"></span>
+                        <span id="targetCalendarLabel">famiglia @ alessandro.gasparri</span>
+                    </p>
+                </div>
+            </div>
+
+            <!-- Action Buttons -->
+            <div class="flex items-center space-x-2">
+                <button onclick="toggleDemoMode()" id="demoBadge" class="px-2.5 py-1 text-xs font-bold rounded-lg border-2 border-slate-900 bg-amber-300 text-slate-900 shadow-pop-sm active:translate-y-0.5">
+                    Demo Active
+                </button>
+                <button onclick="openSettingsModal()" class="w-9 h-9 bg-slate-100 hover:bg-slate-200 rounded-xl border-2 border-slate-900 flex items-center justify-center text-slate-700 shadow-pop-sm transition">
+                    <i class="fa-solid fa-gear"></i>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <main class="max-w-md mx-auto px-4 pt-4 space-y-4">
+
+        <!-- Today's Summary & Progress Header -->
+        <section class="bg-gradient-to-br from-rose-400 via-rose-500 to-pink-500 rounded-2xl p-4 border-2 border-slate-900 text-white shadow-pop">
+            <div class="flex justify-between items-start mb-2">
+                <div>
+                    <span class="inline-block bg-white text-slate-900 font-extrabold text-xs px-2.5 py-0.5 rounded-full border border-slate-900 uppercase tracking-wider mb-1">
+                        Oggi &bull; <span id="currentDateHeader">--</span>
+                    </span>
+                    <h2 class="text-2xl font-black tracking-tight" id="todayGreeting">Ciao Alessandro! 👋</h2>
+                </div>
+                <div class="bg-slate-900/30 backdrop-blur-md rounded-xl p-2 text-center border border-white/20">
+                    <span class="block text-2xl font-black leading-none" id="todayEventsCount">0</span>
+                    <span class="text-[10px] uppercase font-bold text-rose-100">Impegni</span>
+                </div>
+            </div>
+
+            <!-- Mini Progress bar -->
+            <div class="mt-3 bg-slate-900/20 rounded-full h-2.5 overflow-hidden border border-white/30">
+                <div id="todayProgressBar" class="bg-amber-300 h-full rounded-full transition-all duration-500" style="width: 0%"></div>
+            </div>
+            <p class="text-xs font-medium text-rose-100 mt-1.5 flex justify-between">
+                <span>Completamento giornata</span>
+                <span id="progressText">0% fatto</span>
+            </p>
+        </section>
+
+        <!-- Category Tag Filters -->
+        <section class="flex items-center space-x-2 overflow-x-auto no-scrollbar py-1">
+            <button onclick="filterEvents('all')" class="filter-btn active-filter px-3 py-1.5 rounded-xl text-xs font-extrabold border-2 border-slate-900 bg-slate-900 text-white shadow-pop-sm whitespace-nowrap" data-category="all">
+                🌟 Tutti
+            </button>
+            <button onclick="filterEvents('Famiglia')" class="filter-btn px-3 py-1.5 rounded-xl text-xs font-extrabold border-2 border-slate-900 bg-pop-pink text-slate-900 shadow-pop-sm whitespace-nowrap" data-category="Famiglia">
+                👨‍👩‍👧‍👦 Famiglia
+            </button>
+            <button onclick="filterEvents('Scadenze')" class="filter-btn px-3 py-1.5 rounded-xl text-xs font-extrabold border-2 border-slate-900 bg-pop-yellow text-slate-900 shadow-pop-sm whitespace-nowrap" data-category="Scadenze">
+                ⚡ Scadenze
+            </button>
+            <button onclick="filterEvents('Impegni')" class="filter-btn px-3 py-1.5 rounded-xl text-xs font-extrabold border-2 border-slate-900 bg-pop-blue text-slate-900 shadow-pop-sm whitespace-nowrap" data-category="Impegni">
+                📌 Impegni
+            </button>
+            <button onclick="filterEvents('Compleanni')" class="filter-btn px-3 py-1.5 rounded-xl text-xs font-extrabold border-2 border-slate-900 bg-pop-purple text-slate-900 shadow-pop-sm whitespace-nowrap" data-category="Compleanni">
+                🎂 Compleanni
+            </button>
+        </section>
+
+        <!-- Dynamic 7 Days List Container -->
+        <section id="daysContainer" class="space-y-3">
+            <!-- Dynamically populated via JavaScript -->
+        </section>
+
+    </main>
+
+    <!-- Floating Add Button -->
+    <div class="fixed bottom-6 right-6 z-20 md:right-[calc(50vw-210px)]">
+        <button onclick="openAddModal()" class="w-14 h-14 bg-emerald-400 hover:bg-emerald-500 text-slate-900 rounded-2xl border-2 border-slate-900 shadow-pop flex items-center justify-center text-2xl font-black active:translate-y-1 transition transform">
+            <i class="fa-solid fa-plus"></i>
+        </button>
+    </div>
+
+    <!-- Quick Add Event Modal (Bottom Sheet style) -->
+    <div id="addModal" class="fixed inset-0 z-50 hidden bg-slate-900/60 backdrop-blur-sm flex items-end justify-center sm:items-center">
+        <div class="bg-white border-2 border-slate-900 w-full max-w-md rounded-t-3xl sm:rounded-3xl p-6 shadow-pop-lg modal-bottom-sheet max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-black text-slate-900 flex items-center gap-2">
+                    <span class="w-3 h-3 rounded-full bg-emerald-400 border border-slate-900 inline-block"></span>
+                    Nuovo Evento / Scadenza
+                </h3>
+                <button onclick="closeAddModal()" class="w-8 h-8 rounded-xl border-2 border-slate-900 flex items-center justify-center font-bold text-slate-600 hover:bg-slate-100">
+                    ✕
+                </button>
+            </div>
+
+            <form id="addEventForm" onsubmit="handleCreateEvent(event)" class="space-y-4">
+                <div>
+                    <label class="block text-xs font-extrabold uppercase text-slate-700 mb-1">Titolo Evento *</label>
+                    <input type="text" id="eventTitle" required placeholder="Es. Cena di Famiglia o Scadenza Bolletta" 
+                           class="w-full px-3.5 py-2.5 rounded-xl border-2 border-slate-900 font-semibold focus:outline-none focus:ring-2 focus:ring-rose-400">
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-extrabold uppercase text-slate-700 mb-1">Data *</label>
+                        <input type="date" id="eventDate" required 
+                               class="w-full px-3 py-2 rounded-xl border-2 border-slate-900 font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-rose-400">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-extrabold uppercase text-slate-700 mb-1">Ora</label>
+                        <input type="time" id="eventTime" 
+                               class="w-full px-3 py-2 rounded-xl border-2 border-slate-900 font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-rose-400">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-extrabold uppercase text-slate-700 mb-1">Categoria</label>
+                        <select id="eventCategory" class="w-full px-3 py-2 rounded-xl border-2 border-slate-900 font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-rose-400 bg-white">
+                            <option value="Famiglia">👨‍👩‍👧‍👦 Famiglia</option>
+                            <option value="Scadenze">⚡ Scadenze</option>
+                            <option value="Impegni">📌 Impegni</option>
+                            <option value="Compleanni">🎂 Compleanni</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-extrabold uppercase text-slate-700 mb-1">Priorità</label>
+                        <select id="eventPriority" class="w-full px-3 py-2 rounded-xl border-2 border-slate-900 font-semibold text-sm focus:outline-none focus:ring-2 focus:ring-rose-400 bg-white">
+                            <option value="normale">🟡 Normale</option>
+                            <option value="alta">🔴 Alta / Urgente</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-extrabold uppercase text-slate-700 mb-1">Note aggiuntive</label>
+                    <textarea id="eventNotes" rows="2" placeholder="Dettagli, indirizzo o note..." 
+                              class="w-full px-3.5 py-2 rounded-xl border-2 border-slate-900 font-medium text-sm focus:outline-none focus:ring-2 focus:ring-rose-400"></textarea>
+                </div>
+
+                <div class="pt-2 flex gap-3">
+                    <button type="button" onclick="closeAddModal()" class="w-1/2 py-3 rounded-xl border-2 border-slate-900 font-extrabold text-slate-700 bg-slate-100 hover:bg-slate-200">
+                        Annulla
+                    </button>
+                    <button type="submit" class="w-1/2 py-3 rounded-xl border-2 border-slate-900 font-extrabold text-slate-900 bg-emerald-400 hover:bg-emerald-500 shadow-pop-sm active:translate-y-0.5">
+                        Salva Evento
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Settings & Google Integration Modal -->
+    <div id="settingsModal" class="fixed inset-0 z-50 hidden bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-white border-2 border-slate-900 w-full max-w-md rounded-3xl p-6 shadow-pop-lg max-h-[90vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-xl font-black text-slate-900 flex items-center gap-2">
+                    <i class="fa-solid fa-gear text-rose-500"></i> Impostazioni & Sync
+                </h3>
+                <button onclick="closeSettingsModal()" class="w-8 h-8 rounded-xl border-2 border-slate-900 flex items-center justify-center font-bold text-slate-600 hover:bg-slate-100">
+                    ✕
+                </button>
+            </div>
+
+            <div class="space-y-5">
+                <!-- Account Info -->
+                <div class="bg-amber-50 rounded-2xl p-4 border-2 border-slate-900">
+                    <span class="text-xs font-extrabold uppercase text-amber-800 tracking-wider">Account Target</span>
+                    <p class="font-bold text-slate-900 text-sm mt-0.5">alessandro.gasparri@gmail.com</p>
+                    <p class="text-xs text-slate-600 mt-1">Calendario attivo: <span class="font-bold text-slate-800">"famiglia"</span></p>
+                </div>
+
+                <!-- Google OAuth Sync Config -->
+                <div class="space-y-3">
+                    <h4 class="font-extrabold text-sm text-slate-900 flex items-center gap-2">
+                        <i class="fa-brands fa-google text-blue-500"></i> Google Calendar OAuth Setup
+                    </h4>
+                    <p class="text-xs text-slate-600 leading-relaxed">
+                        Per sincronizzare direttamente con il tuo Google Calendar reale, inserisci il tuo Client ID OAuth 2.0 fornito da Google Cloud Console:
+                    </p>
+                    
+                    <div>
+                        <label class="block text-[11px] font-extrabold uppercase text-slate-700 mb-1">Google OAuth Client ID</label>
+                        <input type="text" id="googleClientIdInput" placeholder="xxxxxxxxx.apps.googleusercontent.com" 
+                               class="w-full px-3 py-2 text-xs rounded-xl border-2 border-slate-900 font-mono focus:outline-none focus:ring-2 focus:ring-rose-400">
+                    </div>
+
+                    <div class="flex gap-2">
+                        <button onclick="saveGoogleConfig()" class="w-full py-2.5 rounded-xl border-2 border-slate-900 font-extrabold text-xs text-slate-900 bg-pop-blue shadow-pop-sm active:translate-y-0.5">
+                            Salva Chiave API
+                        </button>
+                        <button onclick="connectGoogleAccount()" id="googleAuthBtn" class="w-full py-2.5 rounded-xl border-2 border-slate-900 font-extrabold text-xs text-white bg-slate-900 shadow-pop-sm active:translate-y-0.5 flex items-center justify-center gap-1.5">
+                            <i class="fa-brands fa-google"></i> Connetti Google
+                        </button>
+                    </div>
+                </div>
+
+                <hr class="border-slate-300">
+
+                <!-- Mode Selector -->
+                <div class="flex items-center justify-between bg-slate-50 p-3 rounded-2xl border-2 border-slate-900">
+                    <div>
+                        <p class="font-extrabold text-xs text-slate-900">Modalità Demo</p>
+                        <p class="text-[11px] text-slate-500">Mostra eventi di prova prefatti</p>
+                    </div>
+                    <button onclick="toggleDemoMode()" id="settingsDemoBtn" class="px-3 py-1.5 rounded-xl text-xs font-black border-2 border-slate-900 bg-amber-300 shadow-pop-sm">
+                        Attiva/Disattiva
+                    </button>
+                </div>
+
+                <!-- Clear Data -->
+                <div class="pt-2">
+                    <button onclick="resetLocalData()" class="w-full py-2.5 rounded-xl border-2 border-rose-900 font-extrabold text-xs text-rose-700 bg-rose-50 hover:bg-rose-100">
+                        <i class="fa-solid fa-trash-can mr-1"></i> Ripristina Eventi Locali
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Feedback Toast -->
+    <div id="toast" class="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 hidden bg-slate-900 text-white font-extrabold text-xs px-4 py-2.5 rounded-xl border-2 border-white shadow-pop transition-all">
+        <span id="toastMessage">Messaggio</span>
+    </div>
+
+    <!-- Application Script -->
+    <script>
+        // Data State Management
+        let isDemoMode = true;
+        let selectedCategoryFilter = 'all';
+        let googleAccessToken = null;
+        let googleClientId = localStorage.getItem('gascal_google_client_id') || '';
+
+        // Default Mock Data for Demonstration
+        const mockEvents = [
+            {
+                id: 'evt-1',
+                title: '📌 Scadenza Rata Assicurazione Auto',
+                date: getOffsetDateStr(0), // Today
+                time: '09:00',
+                category: 'Scadenze',
+                priority: 'alta',
+                completed: false,
+                notes: 'Pagare tramite bonifico o app home banking'
+            },
+            {
+                id: 'evt-2',
+                title: '👨‍👩‍👧‍👦 Spesa Settimanale Famiglia',
+                date: getOffsetDateStr(0), // Today
+                time: '18:30',
+                category: 'Famiglia',
+                priority: 'normale',
+                completed: true,
+                notes: 'Comprare latte, frutta e pannolini'
+            },
+            {
+                id: 'evt-3',
+                title: '🎂 Compleanno Zio Marco',
+                date: getOffsetDateStr(1), // Tomorrow
+                time: '12:30',
+                category: 'Compleanni',
+                priority: 'normale',
+                completed: false,
+                notes: 'Mandare il regalo o fare la telefonata'
+            },
+            {
+                id: 'evt-4',
+                title: '⚡ Bolletta Luce & Gas - Enel',
+                date: getOffsetDateStr(2),
+                time: '11:00',
+                category: 'Scadenze',
+                priority: 'alta',
+                completed: false,
+                notes: 'Importo: 142,50€'
+            },
+            {
+                id: 'evt-5',
+                title: '📌 Allenamento Calcio Pietro',
+                date: getOffsetDateStr(3),
+                time: '17:00',
+                category: 'Impegni',
+                priority: 'normale',
+                completed: false,
+                notes: 'Accompagnare in campo sportivo'
+            },
+            {
+                id: 'evt-6',
+                title: '👨‍👩‍👧‍👦 Pizza di Famiglia al Centro',
+                date: getOffsetDateStr(4),
+                time: '20:30',
+                category: 'Famiglia',
+                priority: 'normale',
+                completed: false,
+                notes: 'Tavolo prenotato a nome Gasparri'
+            },
+            {
+                id: 'evt-7',
+                title: '⚡ Scadenza Bollo Moto',
+                date: getOffsetDateStr(6),
+                time: '10:00',
+                category: 'Scadenze',
+                priority: 'alta',
+                completed: false,
+                notes: 'Effettuare pagamento tabaccheria o Poste'
+            }
+        ];
+
+        let localEvents = JSON.parse(localStorage.getItem('gascal_events')) || [...mockEvents];
+
+        // Utility: Date formatter
+        function getOffsetDateStr(offsetDays) {
+            const d = new Date();
+            d.setDate(d.getDate() + offsetDays);
+            return d.toISOString().split('T')[0];
+        }
+
+        function formatDateFull(dateObj) {
+            const options = { weekday: 'capitalize', day: 'numeric', month: 'short' };
+            return dateObj.toLocaleDateString('it-IT', options);
+        }
+
+        function getDayName(dateObj, index) {
+            if (index === 0) return 'Oggi';
+            if (index === 1) return 'Domani';
+            const days = ['Domenica', 'Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato'];
+            return days[dateObj.getDay()];
+        }
+
+        // Initialize App
+        window.onload = function() {
+            // Set input defaults
+            document.getElementById('eventDate').value = getOffsetDateStr(0);
+            if (googleClientId) {
+                document.getElementById('googleClientIdInput').value = googleClientId;
+            }
+
+            // Display current date in header
+            const today = new Date();
+            const headerDateStr = today.toLocaleDateString('it-IT', { day: 'numeric', month: 'short' });
+            document.getElementById('currentDateHeader').textContent = headerDateStr;
+
+            render7DaysView();
+            updateProgressHeader();
+        };
+
+        // Render the 7-day layout
+        function render7DaysView() {
+            const container = document.getElementById('daysContainer');
+            container.innerHTML = '';
+
+            const today = new Date();
+
+            for (let i = 0; i < 7; i++) {
+                const currentDate = new Date(today);
+                currentDate.setDate(today.getDate() + i);
+                const dateISO = currentDate.toISOString().split('T')[0];
+
+                const dayLabel = getDayName(currentDate, i);
+                const dayNum = currentDate.getDate();
+                const monthName = currentDate.toLocaleDateString('it-IT', { month: 'short' });
+
+                // Filter events for this specific day
+                const dayEvents = localEvents.filter(evt => {
+                    const matchesDate = evt.date === dateISO;
+                    const matchesCategory = selectedCategoryFilter === 'all' || evt.category === selectedCategoryFilter;
+                    return matchesDate && matchesCategory;
+                });
+
+                const isToday = i === 0;
+
+                // Card Container HTML
+                const dayCard = document.createElement('div');
+                dayCard.className = `rounded-2xl border-2 border-slate-900 transition-all ${
+                    isToday ? 'bg-amber-100/90 shadow-pop' : 'bg-white shadow-pop-sm'
+                }`;
+
+                // Header section inside Day Card
+                let eventsListHTML = '';
+
+                if (dayEvents.length === 0) {
+                    eventsListHTML = `
+                        <div class="py-3 px-4 text-center text-xs font-semibold text-slate-400 italic">
+                            Nessun impegno o scadenza per questo giorno
+                        </div>
+                    `;
+                } else {
+                    eventsListHTML = dayEvents.map(evt => `
+                        <div class="group relative flex items-start justify-between p-3 rounded-xl border-2 border-slate-900 bg-white mb-2 shadow-sm transition hover:translate-x-0.5 ${evt.completed ? 'opacity-60 bg-slate-50' : ''}">
+                            <div class="flex items-start space-x-3 w-full pr-2">
+                                <!-- Checkbox to toggle completion -->
+                                <button onclick="toggleEventComplete('${evt.id}')" class="mt-0.5 w-5 h-5 rounded-md border-2 border-slate-900 flex items-center justify-center ${evt.completed ? 'bg-emerald-400 text-slate-900' : 'bg-white hover:bg-slate-100'}">
+                                    ${evt.completed ? '<i class="fa-solid fa-check text-xs"></i>' : ''}
+                                </button>
+                                
+                                <div class="flex-1 min-w-0" onclick="toggleDetails('${evt.id}')">
+                                    <div class="flex items-center gap-2 flex-wrap">
+                                        <span class="font-bold text-sm text-slate-900 leading-tight ${evt.completed ? 'line-through text-slate-500' : ''}">
+                                            ${evt.title}
+                                        </span>
+                                        ${evt.priority === 'alta' ? '<span class="text-[10px] bg-rose-500 text-white font-black px-1.5 py-0.2 rounded border border-slate-900">URGENTE</span>' : ''}
+                                    </div>
+                                    
+                                    <div class="flex items-center space-x-3 mt-1 text-[11px] font-bold text-slate-600">
+                                        ${evt.time ? `<span><i class="fa-regular fa-clock mr-1 text-rose-500"></i>${evt.time}</span>` : ''}
+                                        <span class="px-2 py-0.5 rounded-md border border-slate-900 ${getCategoryBadgeColor(evt.category)}">
+                                            ${evt.category}
+                                        </span>
+                                    </div>
+
+                                    <!-- Expandable Notes -->
+                                    <div id="notes-${evt.id}" class="hidden mt-2 pt-2 border-t border-slate-200 text-xs text-slate-600">
+                                        <p class="font-medium">${evt.notes || 'Nessuna nota aggiuntiva.'}</p>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Delete button -->
+                            <button onclick="deleteEvent('${evt.id}')" class="text-slate-400 hover:text-rose-500 p-1 font-bold">
+                                <i class="fa-solid fa-trash-can text-xs"></i>
+                            </button>
+                        </div>
+                    `).join('');
+                }
+
+                dayCard.innerHTML = `
+                    <div class="p-3 border-b-2 border-slate-900 flex justify-between items-center ${isToday ? 'bg-amber-300' : 'bg-slate-50'} rounded-t-xl">
+                        <div class="flex items-center space-x-2">
+                            <span class="text-xs font-black uppercase px-2 py-0.5 rounded-lg border border-slate-900 ${isToday ? 'bg-rose-500 text-white' : 'bg-white text-slate-900'}">
+                                ${dayLabel}
+                            </span>
+                            <span class="text-sm font-extrabold text-slate-800">
+                                ${dayNum} ${monthName}
+                            </span>
+                        </div>
+                        <span class="text-xs font-extrabold px-2 py-0.5 rounded-full bg-slate-900 text-white">
+                            ${dayEvents.length} ${dayEvents.length === 1 ? 'evento' : 'eventi'}
+                        </span>
+                    </div>
+
+                    <div class="p-3">
+                        ${eventsListHTML}
+                    </div>
+                `;
+
+                container.appendChild(dayCard);
+            }
+        }
+
+        // Helper to format Category Badges
+        function getCategoryBadgeColor(cat) {
+            switch(cat) {
+                case 'Famiglia': return 'bg-pop-pink text-slate-900';
+                case 'Scadenze': return 'bg-pop-yellow text-slate-900';
+                case 'Impegni': return 'bg-pop-blue text-slate-900';
+                case 'Compleanni': return 'bg-pop-purple text-slate-900';
+                default: return 'bg-slate-100 text-slate-900';
+            }
+        }
+
+        // Expand event details
+        function toggleDetails(id) {
+            const el = document.getElementById(`notes-${id}`);
+            if (el) {
+                el.classList.toggle('hidden');
+            }
+        }
+
+        // Toggle Event Completion
+        function toggleEventComplete(id) {
+            localEvents = localEvents.map(evt => {
+                if (evt.id === id) {
+                    return { ...evt, completed: !evt.completed };
+                }
+                return evt;
+            });
+            saveLocalEvents();
+            render7DaysView();
+            updateProgressHeader();
+        }
+
+        // Delete Event
+        function deleteEvent(id) {
+            localEvents = localEvents.filter(evt => evt.id !== id);
+            saveLocalEvents();
+            render7DaysView();
+            updateProgressHeader();
+            showToast('Evento rimosso!');
+        }
+
+        // Filter events by Category
+        function filterEvents(category) {
+            selectedCategoryFilter = category;
+            
+            // Highlight active button
+            document.querySelectorAll('.filter-btn').forEach(btn => {
+                if (btn.dataset.category === category) {
+                    btn.classList.add('bg-slate-900', 'text-white');
+                    btn.classList.remove('bg-pop-pink', 'bg-pop-yellow', 'bg-pop-blue', 'bg-pop-purple');
+                } else {
+                    btn.classList.remove('bg-slate-900', 'text-white');
+                }
+            });
+
+            render7DaysView();
+        }
+
+        // Save event handler
+        function handleCreateEvent(e) {
+            e.preventDefault();
+            const title = document.getElementById('eventTitle').value.trim();
+            const date = document.getElementById('eventDate').value;
+            const time = document.getElementById('eventTime').value;
+            const category = document.getElementById('eventCategory').value;
+            const priority = document.getElementById('eventPriority').value;
+            const notes = document.getElementById('eventNotes').value.trim();
+
+            if (!title || !date) return;
+
+            const newEvent = {
+                id: 'evt-' + Date.now(),
+                title: (category === 'Scadenze' ? '⚡ ' : '📌 ') + title,
+                date,
+                time: time || 'Tutto il giorno',
+                category,
+                priority,
+                completed: false,
+                notes
+            };
+
+            localEvents.unshift(newEvent);
+            saveLocalEvents();
+
+            // Reset Form & Close Modal
+            document.getElementById('addEventForm').reset();
+            document.getElementById('eventDate').value = getOffsetDateStr(0);
+            closeAddModal();
+
+            render7DaysView();
+            updateProgressHeader();
+            showToast('Nuovo evento salvato!');
+        }
+
+        // Save to localStorage
+        function saveLocalEvents() {
+            localStorage.setItem('gascal_events', JSON.stringify(localEvents));
+        }
+
+        // Update progress bar header for Today
+        function updateProgressHeader() {
+            const todayISO = getOffsetDateStr(0);
+            const todayEvts = localEvents.filter(e => e.date === todayISO);
+            
+            document.getElementById('todayEventsCount').textContent = todayEvts.length;
+
+            if (todayEvts.length === 0) {
+                document.getElementById('todayProgressBar').style.width = '100%';
+                document.getElementById('progressText').textContent = 'Nessun impegno oggi 🎉';
+                return;
+            }
+
+            const completed = todayEvts.filter(e => e.completed).length;
+            const percent = Math.round((completed / todayEvts.length) * 100);
+
+            document.getElementById('todayProgressBar').style.width = `${percent}%`;
+            document.getElementById('progressText').textContent = `${completed}/${todayEvts.length} completati (${percent}%)`;
+        }
+
+        // Toggle Demo Mode
+        function toggleDemoMode() {
+            isDemoMode = !isDemoMode;
+            const badge = document.getElementById('demoBadge');
+            
+            if (isDemoMode) {
+                badge.textContent = 'Demo Active';
+                badge.className = 'px-2.5 py-1 text-xs font-bold rounded-lg border-2 border-slate-900 bg-amber-300 text-slate-900 shadow-pop-sm';
+                showToast('Modalità Demo Attiva');
+            } else {
+                badge.textContent = 'Demo Off';
+                badge.className = 'px-2.5 py-1 text-xs font-bold rounded-lg border-2 border-slate-900 bg-slate-200 text-slate-600 shadow-pop-sm';
+                showToast('Modalità Demo Disattivata');
+            }
+        }
+
+        // Google OAuth Integration Handlers
+        function saveGoogleConfig() {
+            const inputVal = document.getElementById('googleClientIdInput').value.trim();
+            if (inputVal) {
+                googleClientId = inputVal;
+                localStorage.setItem('gascal_google_client_id', googleClientId);
+                showToast('Client ID salvato!');
+            }
+        }
+
+        function connectGoogleAccount() {
+            if (!googleClientId) {
+                showToast('Inserisci prima il tuo Google Client ID!');
+                return;
+            }
+
+            try {
+                const client = google.accounts.oauth2.initTokenClient({
+                    client_id: googleClientId,
+                    scope: 'https://www.googleapis.com/auth/calendar.readonly',
+                    callback: (response) => {
+                        if (response.access_token) {
+                            googleAccessToken = response.access_token;
+                            showToast('Connesso a Google Calendar!');
+                            fetchGoogleCalendarEvents();
+                        }
+                    },
+                });
+                client.requestAccessToken();
+            } catch (err) {
+                console.error(err);
+                showToast('Errore durante il collegamento a Google API');
+            }
+        }
+
+        // Fetch events from Google Calendar API
+        async function fetchGoogleCalendarEvents() {
+            if (!googleAccessToken) return;
+
+            try {
+                // Fetch primary or specified "famiglia" calendar events
+                const response = await fetch('https://www.googleapis.com/calendar/v3/calendars/primary/events?timeMin=' + new Date().toISOString(), {
+                    headers: {
+                        'Authorization': `Bearer ${googleAccessToken}`
+                    }
+                });
+                const data = await response.json();
+
+                if (data.items) {
+                    const fetchedEvts = data.items.map(item => ({
+                        id: item.id,
+                        title: item.summary || 'Evento senza titolo',
+                        date: (item.start.dateTime || item.start.date).split('T')[0],
+                        time: item.start.dateTime ? new Date(item.start.dateTime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'}) : 'Tutto il giorno',
+                        category: 'Famiglia',
+                        priority: 'normale',
+                        completed: false,
+                        notes: item.description || ''
+                    }));
+
+                    localEvents = [...fetchedEvts, ...localEvents];
+                    render7DaysView();
+                    updateProgressHeader();
+                    showToast('Eventi Google sincronizzati!');
+                }
+            } catch (err) {
+                console.error(err);
+                showToast('Errore lettura eventi Google');
+            }
+        }
+
+        // Reset local data
+        function resetLocalData() {
+            localEvents = [...mockEvents];
+            saveLocalEvents();
+            render7DaysView();
+            updateProgressHeader();
+            closeSettingsModal();
+            showToast('Dati ripristinati!');
+        }
+
+        // Modals Controls
+        function openAddModal() {
+            document.getElementById('addModal').classList.remove('hidden');
+        }
+
+        function closeAddModal() {
+            document.getElementById('addModal').classList.add('hidden');
+        }
+
+        function openSettingsModal() {
+            document.getElementById('settingsModal').classList.remove('hidden');
+        }
+
+        function closeSettingsModal() {
+            document.getElementById('settingsModal').classList.add('hidden');
+        }
+
+        // Toast message pop
+        function showToast(msg) {
+            const toast = document.getElementById('toast');
+            document.getElementById('toastMessage').textContent = msg;
+            toast.classList.remove('hidden');
+            setTimeout(() => {
+                toast.classList.add('hidden');
+            }, 2500);
+        }
+    </script>
+</body>
+</html>
